@@ -1,80 +1,381 @@
+debootstrap --arch amd64 xenial /diskless2017/tftproot/target http://mirror.easyspeedy.com/ubuntu/
+
+
+dnsmasq-diskless.service:
+
+[Unit]
+Description=A lightweight DHCP and caching DNS server
+After=network.target
+Documentation=man:dnsmasq(8)
+
+[Service]
+Type=dbus
+BusName=uk.org.thekelleys.dnsmasq
+ExecStartPre=/usr/bin/dnsmasq -C /etc/dnsmasq-diskless2017.conf --test
+ExecStartPre=/usr/bin/ip link set bridge0 up
+ExecStart=/usr/bin/dnsmasq -C /etc/dnsmasq-diskless2017.conf -k --enable-dbus --pid-file
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
+
+
+/etc/dnsmasq-diskless2017.conf:
+
+domain-needed
+bogus-priv
+interface=bridge0
+dhcp-range=192.168.0.10,192.168.0.250,72h
+dhcp-boot=pxelinux.0
+enable-tftp
+user=root
+tftp-root=/home/rav/diskless2017
+bind-interfaces
+
+
+/etc/exports:
+
+/home/rav/diskless2017/contest 192.168.0.1/255.255.0.0(ro,async,no_root_squash,no_subtree_check,insecure)
+
+==> /etc/systemd/network/diskless-bridge-en-slave.network <==
+[Match]
+Name=en*
+
+[Network]
+Bridge=bridge0
+
+==> /etc/systemd/network/diskless-bridge.netdev <==
+[NetDev]
+Name=bridge0
+Kind=bridge
+
+==> /etc/systemd/network/diskless-bridge.network <==
+[Match]
+Name=bridge0
+
+[Network]
+DHCP=no
+LinkLocalAddressing=no
+Address=192.168.0.1/24
+
+
+/etc/NetworkManager/NetworkManager.conf:
+(Maybe this is different in Ubuntu?)
+
+[device]
+match-device=interface-name:bridge0
+unmanaged=1
+[keyfile]
+unmanaged-devices=interface-name:br*;interface-name:en*;interface-name:tap*
+
+
+
 mount dev, devpts, proc, sys
 chroot /bin/su
 apt-get install vim
-configure /etc/fstab
+
+
 dpkg-reconfigure tzdata
 dpkg-reconfigure locales
 apt-get install ubuntu-desktop
+Remember to Just Say No to installing grub!
 apt-get install linux-generic
+
+configure /etc/fstab:
+
+# /etc/fstab: static file system information.
+#
+# <file system> <mount point>   <type>  <options>       <dump>  <pass>
+proc            /proc           proc    defaults        0       0
+/dev/nfs        /               nfs    defaults          1       1
+none            /tmp            tmpfs   defaults        0       0
+none            /var/run        tmpfs   defaults        0       0
+none            /var/lock       tmpfs   defaults        0       0
+none            /var/tmp        tmpfs   defaults        0       0
+
 Make /boot/* world-readable
 
 Allow client to modify contest: sudo exportfs -o rw,insecure,no_root_squash,no_all_squash 192.168.0.86:/home/rav/diskless2017/contest
-
-Change /var/{run,lock} to rwxrwxrwt directories (were symlinks)
+Or on an Ubuntu 16 host with old nfs: Change /etc/exports and run sudo exportfs -r
 
 Change /etc/resolvconf/resolv.conf.d/head and /etc/resolv.conf to add nameserver 192.168.0.1
 
-Create etc/overlayroot.conf https://unix.stackexchange.com/questions/282682/ubuntu-16-04-with-read-only-filesystem-and-writable-layer
-
-ln -s ../run /var/run
-
-Create /etc/tmpfiles.d/var.conf modifying to:
-# Mathias Rav modified 2017-10-04: Put logs in /run
-#d /run/log 0755 - - -
-#L /var/log 0755 - - - ../run/log
-Create /etc/tmpfiles.d/00rsyslog modifying to:
-# Mathias Rav modified 2017-10-04: Put logs in /run
-#d /var/log 0775 root syslog -
-d /run/log 0775 root syslog -
-L /var/log 0775 - - - ../run/log
-
-
-  128  systemctl mask systemd-rfkill.service
-  129  systemctl disable anacron
-  130  systemctl disable NetworkManager
-  131  systemctl enable systemd-networkd
   134  vim /etc/systemd/network/contest.network
 [Match]
 Name=e*
 [Network]
 DHCP=yes
 
+Add aufs to /etc/initramfs-tools/modules
+
+wget http://archive.ubuntu.com/ubuntu/dists/xenial-updates/main/installer-amd64/current/images/netboot/ldlinux.c32
+wget http://archive.ubuntu.com/ubuntu/dists/xenial-updates/main/installer-amd64/current/images/netboot/pxelinux.cfg/default
+wget http://archive.ubuntu.com/ubuntu/dists/xenial-updates/main/installer-amd64/current/images/netboot/pxelinux.0
+
+  317  systemctl mask var-run.mount
+  317  systemctl mask var-lock.mount
+
+# Change /var/{run,lock} to rwxrwxrwt directories (were symlinks)
+
+Fix launcher bar (remove junk, add terminal)
+Set keyboard to DK
+Disable screensaver
+Disable password requirement
+Enable autologin
+Disable autoupdates
+Setup Firefox bookmarks: cppreference.com, cplusplus.com, java lib
+Install:
+openjdk-8-jdk
+PyCharm (tar)
+IntelliJ (tar)
+BlueJ (deb)
+emacs
+build-essential
+clang
+nano
+pypy
+
+Add .local/bin to $PATH and add intellij and pycharm shell commands
+Start IntelliJ and PyCharm
 
 
-  142  systemctl mask systemd-rfkill.socket
-  143  systemctl mask var-run.mount
-  143  systemctl mask var-lock.mount
+apt-get remove avahi-daemon
 
 
-  147  vim /usr/lib/tmpfiles.d/dbus.conf 
-# Modified: masked
-#L /var/lib/dbus/machine-id      -       -       -       -       /etc/machine-id
+  129  systemctl disable anacron
+  130  systemctl disable NetworkManager
+  131  systemctl enable systemd-networkd
 
-  148  vim /usr/lib/tmpfiles.d/debian.conf 
-# Modified: masked
-#L+ /etc/mtab   -    -    -    -  ../proc/self/mounts
+NOTE: overlayfs doesn't work with NFS :-(
+https://lkml.org/lkml/2012/9/6/378
 
-  150  systemctl mask systemd-update-utmp
-
-
-  156  vim /usr/lib/tmpfiles.d/legacy.conf
-# Modified: masked
-#L /var/lock - - - - ../run/lock
-
-  161  ln -s ../run/lock /var/lock
-
-  166  systemctl mask avahi-daemon
-
-  172  systemctl mask systemd-update-utmp-runlevel
+Create init-bottom script to aufs mount
+update-initramfs -u
 
 
-  176  systemctl mask var-lock.mount
-  177  systemctl mask avahi-daemon
-  179  systemctl mask systemd-backlight@backlight:acpi_video0.service
-  180  systemctl mask systemd-backlight@backlight:intel_backlight.service
+ln -sf ../run /var/run
+
+
+root@alcyone:/etc/tmpfiles.d# cat var.conf 
+#  This file is part of systemd.
+#
+#  systemd is free software; you can redistribute it and/or modify it
+#  under the terms of the GNU Lesser General Public License as published by
+#  the Free Software Foundation; either version 2.1 of the License, or
+#  (at your option) any later version.
+
+# See tmpfiles.d(5) for details
+
+q /var 0755 - - -
+
+# Commented-out: Already handled
+#L /var/run - - - - ../run
+
+d /var/log 0755 - - -
+f /var/log/wtmp 0664 root utmp -
+f /var/log/btmp 0600 root utmp -
+
+d /var/cache 0755 - - -
+
+d /var/lib 0755 - - -
+
+d /var/spool 0755 - - -
+
+
+root@alcyone:/etc/tmpfiles.d# cat /etc/initramfs-tools/scripts/init-bottom/ro_root 
+#!/bin/sh
+# From https://unix.stackexchange.com/questions/282682/ubuntu-16-04-with-read-only-filesystem-and-writable-layer
+
+PREREQ=''
+
+prereqs() {
+  echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+  prereqs
+  exit 0
+  ;;
+esac
+
+ro_mount_point="${rootmnt%/}.ro"
+rw_mount_point="${rootmnt%/}.rw"
+
+# Create mount points for the read-only and read/write layers:
+echo mkdir "${ro_mount_point}" "${rw_mount_point}"
+mkdir "${ro_mount_point}" "${rw_mount_point}"
+
+# Move the already-mounted root filesystem to the ro mount point:
+echo mount --move "${rootmnt}" "${ro_mount_point}"
+mount --move "${rootmnt}" "${ro_mount_point}"
+
+# echo mkdir -p "${rootmnt}"
+# mkdir -p "${rootmnt}"
+
+# Mount the read/write filesystem:
+mount -t tmpfs root.rw "${rw_mount_point}"
+
+# Mount the union:
+mount -t aufs -o "dirs=${rw_mount_point}=rw:${ro_mount_point}=ro" root.union "${rootmnt}"
+
+# Correct the permissions of /:
+chmod 755 "${rootmnt}"
+
+# Make sure the individual ro and rw mounts are accessible from within the root
+# once the union is assumed as /.  This makes it possible to access the
+# component filesystems individually.
+mkdir "${rootmnt}/ro" "${rootmnt}/rw"
+mount --bind "${ro_mount_point}" "${rootmnt}/ro"
+mount --bind "${rw_mount_point}" "${rootmnt}/rw"
+
+# ro_root end
 
 
 
-  184  rm -rf /var/log
-  185  ln -s ../run/log /var/log
-  186  systemctl mask bluetooth
+
+
+Remember to change /etc/exports back to ro
+
+Create target /usr/local/bin/find_and_mount
+
+#!/bin/sh
+# vim: set sw=4 noet:
+
+APARTMENT=ncpc2017
+# Find and mount the suitable home partition.
+# Use /sbin/parted is list partitions.
+# Pick the one with most available space.
+# Create /$APARTMENT on that partition and use this as the root in the aufs.
+# By Jakob Truelsen in September 2013
+# Revised September 2014
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+do_stop() {
+    echo "Unmounting old stuff"
+    /bin/umount /var/tmp 2>&1 || true  >/dev/null
+    /bin/umount /tmp  2>&1 || true >/dev/null
+    /bin/umount -f /mnt/home || true  2>&1 >/dev/null
+    /bin/umount -f /mnt/home/$APARTMENT || true  2>&1 >/dev/null
+    /sbin/swapoff -a || true  2>&1 >/dev/null
+}
+
+do_start() {
+    # Setup Linux device mapper
+    /sbin/modprobe dm-mod
+    # Rebuild device maps
+    /sbin/vgscan
+
+    sleep 5
+    /sbin/parted -lms > /root/listofcrap
+    # parted output looks something like:
+
+    # BYT;
+    # /dev/sda:256GB:scsi:512:512:msdos:ATA C400-MTFDDAK256M;
+    # 1:1049kB:2150MB:2149MB:ntfs::boot, diag;
+    # 2:2152MB:125GB:122GB:::lba;
+    # 5:2152MB:125GB:122GB:ntfs::;
+    # 3:125GB:256GB:132GB:ext4::;
+
+    # easily parsed by regular expressions.
+
+    dev=""
+    best=""
+    best_size=0
+
+    # Parse the parted output to find suitable persistent homedir partition
+    while read line; do
+	if echo $line | grep -q '^\/'; then
+	    # Begin outputting list of partitions on this new device
+	    dev=$(echo $line | sed 's/:.*//')
+	elif echo $line | grep -q '^[0-9]'; then
+	    # Parse partition on the current device
+	    # Format is number:used:total:available:type:other crap
+	    # `used` is space used, `total` total, `available` is the remaining space
+	    # hopefully total = used + available
+	    number=$(echo $line | sed -re 's/([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):.*/\1/')
+	    # hopefully available is not given in kilobytes
+	    available=$(echo $line | sed -re 's/([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):.*/\4/' | sed -re 's/KB//' | sed -re 's/MB//' | sed -re 's/GB/000/' | sed -re 's/TB/000000/')
+	    type=$(echo $line | sed -re 's/([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):.*/\5/')
+	    d="$dev$number"
+	    # check if e.g. /dev/sdc4 exists
+	    if ! [ -e "$d" ]; then
+		# otherwise, check if /dev/sdc exists ...
+		d="$dev"
+	    fi
+	    if ! [ -e "$d" ]; then
+		# Otherwise, bail out
+		continue
+	    fi
+
+	    if [ "$type" = "ext4" ]  || [ "$type" = "ext2" ]  || [ "$type" = "ext3" ]  || [ "$type" = "btrfs" ]; then
+		# this partition is suitable; record size of largest partition
+		if [ $available -ge $best_size ]; then
+		    best=$d
+		    best_size=$available
+		fi
+	    fi
+
+	    if echo $type | grep -q 'swap'; then
+		echo "Enabling swap $d"
+		swapon $d
+	    fi
+	fi
+    done < /root/listofcrap
+
+    if ! [ -e $best ]; then
+	echo "No suitable home partition found"
+    else
+	echo "Mounting ${best} of size ${best_size} MB"
+	sleep 5
+	/bin/mkdir -p  /mnt/home
+	/bin/mount  "$best" /mnt/home
+	/bin/mkdir -p /mnt/home/$APARTMENT
+	/bin/mkdir -p /mnt/home/$APARTMENT/tmp
+	/bin/mkdir -p /mnt/home/$APARTMENT/var/tmp
+	/bin/mkdir -p /mnt/home/$APARTMENT/home
+	/bin/chmod 777 /mnt/home/$APARTMENT/tmp
+	/bin/chmod 777 /mnt/home/$APARTMENT/var/tmp
+	/bin/chown contest:contest /mnt/home/$APARTMENT/home
+	/bin/mount -o bind /mnt/home/$APARTMENT/tmp /tmp
+	/bin/mount -o bind /mnt/home/$APARTMENT/var/tmp /var/tmp
+	# /ro/home/contest is actually native read-only
+	# so we could maybe use =rr instead of =ro
+	/bin/mount -t aufs -o dirs="/mnt/home/$APARTMENT/home=rw":"/ro/home/contest=ro" aufs /home/contest
+	/usr/bin/rsync -au /contest-skel/ /home/contest/
+    fi
+    sleep 5
+}
+
+case $1 in
+start|restart)
+    do_start
+    ;;
+stop)
+    do_stop
+    ;;
+*)
+    exit 1
+esac
+
+Create /etc/systemd/system/find-and-mount.service
+
+[Unit]
+Description=Find local harddrive and mount it on /home/contest
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/find_and_mount start
+ExecStop=/usr/local/bin/find_and_mount stop
+
+[Install]
+WantedBy=multi-user.target
+ln -s ../find-and-mount.service /etc/systemd/system/multi-user.target.wants/find-and-mount.service
+
+Remember to change root password to something sensible!
+
+
+BOOT TROUBLESHOOTING:
+Ensure that /boot/* on target is world-readable
