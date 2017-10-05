@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /home/contest/Software/idea-IC-172.4343.14/bin/idea.sh

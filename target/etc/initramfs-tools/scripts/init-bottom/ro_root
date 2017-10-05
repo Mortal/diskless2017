@@ -1,0 +1,47 @@
+#!/bin/sh
+# From https://unix.stackexchange.com/questions/282682/ubuntu-16-04-with-read-only-filesystem-and-writable-layer
+
+PREREQ=''
+
+prereqs() {
+  echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+  prereqs
+  exit 0
+  ;;
+esac
+
+ro_mount_point="${rootmnt%/}.ro"
+rw_mount_point="${rootmnt%/}.rw"
+
+# Create mount points for the read-only and read/write layers:
+echo mkdir "${ro_mount_point}" "${rw_mount_point}"
+mkdir "${ro_mount_point}" "${rw_mount_point}"
+
+# Move the already-mounted root filesystem to the ro mount point:
+echo mount --move "${rootmnt}" "${ro_mount_point}"
+mount --move "${rootmnt}" "${ro_mount_point}"
+
+# echo mkdir -p "${rootmnt}"
+# mkdir -p "${rootmnt}"
+
+# Mount the read/write filesystem:
+mount -t tmpfs root.rw "${rw_mount_point}"
+
+# Mount the union:
+mount -t aufs -o "dirs=${rw_mount_point}=rw:${ro_mount_point}=ro" root.union "${rootmnt}"
+
+# Correct the permissions of /:
+chmod 755 "${rootmnt}"
+
+# Make sure the individual ro and rw mounts are accessible from within the root
+# once the union is assumed as /.  This makes it possible to access the
+# component filesystems individually.
+mkdir "${rootmnt}/ro" "${rootmnt}/rw"
+mount --bind "${ro_mount_point}" "${rootmnt}/ro"
+mount --bind "${rw_mount_point}" "${rootmnt}/rw"
+
+# ro_root end

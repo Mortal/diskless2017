@@ -1,0 +1,15 @@
+[Unit]
+Description=A lightweight DHCP and caching DNS server
+After=network.target
+Documentation=man:dnsmasq(8)
+
+[Service]
+Type=dbus
+BusName=uk.org.thekelleys.dnsmasq
+ExecStartPre=/usr/bin/dnsmasq -C /etc/dnsmasq-diskless2017.conf --test
+ExecStartPre=/usr/bin/ip link set bridge0 up
+ExecStart=/usr/bin/dnsmasq -C /etc/dnsmasq-diskless2017.conf -k --enable-dbus --pid-file
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target

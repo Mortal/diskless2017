@@ -1,0 +1,119 @@
+#!/bin/sh
+# vim: set sw=4 noet:
+
+APARTMENT=ncpc2017
+# Find and mount the suitable home partition.
+# Use /sbin/parted is list partitions.
+# Pick the one with most available space.
+# Create /$APARTMENT on that partition and use this as the root in the aufs.
+# By Jakob Truelsen in September 2013
+# Revised September 2014
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+do_stop() {
+    echo "Unmounting old stuff"
+    /bin/umount /var/tmp 2>&1 || true  >/dev/null
+    /bin/umount /tmp  2>&1 || true >/dev/null
+    /bin/umount -f /mnt/home || true  2>&1 >/dev/null
+    /bin/umount -f /mnt/home/$APARTMENT || true  2>&1 >/dev/null
+    /sbin/swapoff -a || true  2>&1 >/dev/null
+}
+
+do_start() {
+    # Setup Linux device mapper
+    /sbin/modprobe dm-mod
+    # Rebuild device maps
+    /sbin/vgscan
+
+    sleep 5
+    /sbin/parted -lms > /root/listofcrap
+    # parted output looks something like:
+
+    # BYT;
+    # /dev/sda:256GB:scsi:512:512:msdos:ATA C400-MTFDDAK256M;
+    # 1:1049kB:2150MB:2149MB:ntfs::boot, diag;
+    # 2:2152MB:125GB:122GB:::lba;
+    # 5:2152MB:125GB:122GB:ntfs::;
+    # 3:125GB:256GB:132GB:ext4::;
+
+    # easily parsed by regular expressions.
+
+    dev=""
+    best=""
+    best_size=0
+
+    # Parse the parted output to find suitable persistent homedir partition
+    while read line; do
+	if echo $line | grep -q '^\/'; then
+	    # Begin outputting list of partitions on this new device
+	    dev=$(echo $line | sed 's/:.*//')
+	elif echo $line | grep -q '^[0-9]'; then
+	    # Parse partition on the current device
+	    # Format is number:used:total:available:type:other crap
+	    # `used` is space used, `total` total, `available` is the remaining space
+	    # hopefully total = used + available
+	    number=$(echo $line | sed -re 's/([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):.*/\1/')
+	    # hopefully available is not given in kilobytes
+	    available=$(echo $line | sed -re 's/([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):.*/\4/' | sed -re 's/KB//' | sed -re 's/MB//' | sed -re 's/GB/000/' | sed -re 's/TB/000000/')
+	    type=$(echo $line | sed -re 's/([^:]*):([^:]*):([^:]*):([^:]*):([^:]*):.*/\5/')
+	    d="$dev$number"
+	    # check if e.g. /dev/sdc4 exists
+	    if ! [ -e "$d" ]; then
+		# otherwise, check if /dev/sdc exists ...
+		d="$dev"
+	    fi
+	    if ! [ -e "$d" ]; then
+		# Otherwise, bail out
+		continue
+	    fi
+
+	    if [ "$type" = "ext4" ]  || [ "$type" = "ext2" ]  || [ "$type" = "ext3" ]  || [ "$type" = "btrfs" ]; then
+		# this partition is suitable; record size of largest partition
+		if [ $available -ge $best_size ]; then
+		    best=$d
+		    best_size=$available
+		fi
+	    fi
+
+	    if echo $type | grep -q 'swap'; then
+		echo "Enabling swap $d"
+		swapon $d
+	    fi
+	fi
+    done < /root/listofcrap
+
+    if ! [ -e $best ]; then
+	echo "No suitable home partition found"
+    else
+	echo "Mounting ${best} of size ${best_size} MB"
+	sleep 5
+	/bin/mkdir -p  /mnt/home
+	/bin/mount  "$best" /mnt/home
+	/bin/mkdir -p /mnt/home/$APARTMENT
+	/bin/mkdir -p /mnt/home/$APARTMENT/tmp
+	/bin/mkdir -p /mnt/home/$APARTMENT/var/tmp
+	/bin/mkdir -p /mnt/home/$APARTMENT/home
+	/bin/chmod 777 /mnt/home/$APARTMENT/tmp
+	/bin/chmod 777 /mnt/home/$APARTMENT/var/tmp
+	/bin/chown contest:contest /mnt/home/$APARTMENT/home
+	/bin/mount -o bind /mnt/home/$APARTMENT/tmp /tmp
+	/bin/mount -o bind /mnt/home/$APARTMENT/var/tmp /var/tmp
+	# /ro/home/contest is actually native read-only
+	# so we could maybe use =rr instead of =ro
+	/bin/mount -t aufs -o dirs="/mnt/home/$APARTMENT/home=rw":"/ro/home/contest=ro" aufs /home/contest
+	/usr/bin/rsync -au /contest-skel/ /home/contest/
+    fi
+    sleep 5
+}
+
+case $1 in
+start|restart)
+    do_start
+    ;;
+stop)
+    do_stop
+    ;;
+*)
+    exit 1
+esac

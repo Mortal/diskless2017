@@ -1,0 +1,11 @@
+[Unit]
+Description=Find local harddrive and mount it on /home/contest
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/find_and_mount start
+ExecStop=/usr/local/bin/find_and_mount stop
+
+[Install]
+WantedBy=multi-user.target
