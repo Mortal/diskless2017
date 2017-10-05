@@ -1,0 +1,80 @@
+mount dev, devpts, proc, sys
+chroot /bin/su
+apt-get install vim
+configure /etc/fstab
+dpkg-reconfigure tzdata
+dpkg-reconfigure locales
+apt-get install ubuntu-desktop
+apt-get install linux-generic
+Make /boot/* world-readable
+
+Allow client to modify contest: sudo exportfs -o rw,insecure,no_root_squash,no_all_squash 192.168.0.86:/home/rav/diskless2017/contest
+
+Change /var/{run,lock} to rwxrwxrwt directories (were symlinks)
+
+Change /etc/resolvconf/resolv.conf.d/head and /etc/resolv.conf to add nameserver 192.168.0.1
+
+Create etc/overlayroot.conf https://unix.stackexchange.com/questions/282682/ubuntu-16-04-with-read-only-filesystem-and-writable-layer
+
+ln -s ../run /var/run
+
+Create /etc/tmpfiles.d/var.conf modifying to:
+# Mathias Rav modified 2017-10-04: Put logs in /run
+#d /run/log 0755 - - -
+#L /var/log 0755 - - - ../run/log
+Create /etc/tmpfiles.d/00rsyslog modifying to:
+# Mathias Rav modified 2017-10-04: Put logs in /run
+#d /var/log 0775 root syslog -
+d /run/log 0775 root syslog -
+L /var/log 0775 - - - ../run/log
+
+
+  128  systemctl mask systemd-rfkill.service
+  129  systemctl disable anacron
+  130  systemctl disable NetworkManager
+  131  systemctl enable systemd-networkd
+  134  vim /etc/systemd/network/contest.network
+[Match]
+Name=e*
+[Network]
+DHCP=yes
+
+
+
+  142  systemctl mask systemd-rfkill.socket
+  143  systemctl mask var-run.mount
+  143  systemctl mask var-lock.mount
+
+
+  147  vim /usr/lib/tmpfiles.d/dbus.conf 
+# Modified: masked
+#L /var/lib/dbus/machine-id      -       -       -       -       /etc/machine-id
+
+  148  vim /usr/lib/tmpfiles.d/debian.conf 
+# Modified: masked
+#L+ /etc/mtab   -    -    -    -  ../proc/self/mounts
+
+  150  systemctl mask systemd-update-utmp
+
+
+  156  vim /usr/lib/tmpfiles.d/legacy.conf
+# Modified: masked
+#L /var/lock - - - - ../run/lock
+
+  161  ln -s ../run/lock /var/lock
+
+  166  systemctl mask avahi-daemon
+
+  172  systemctl mask systemd-update-utmp-runlevel
+
+
+  176  systemctl mask var-lock.mount
+  177  systemctl mask avahi-daemon
+  179  systemctl mask systemd-backlight@backlight:acpi_video0.service
+  180  systemctl mask systemd-backlight@backlight:intel_backlight.service
+
+
+
+  184  rm -rf /var/log
+  185  ln -s ../run/log /var/log
+  186  systemctl mask bluetooth
